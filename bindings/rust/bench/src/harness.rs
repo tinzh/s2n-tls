@@ -66,7 +66,6 @@ pub trait TlsBenchHarness: Sized {
     fn negotiated_tls13(&self) -> bool;
 
     /// Transfer given data one-way between connections
-    /// Uses `data` to read and write from, clobbering contents
     fn transfer(&mut self, sender: Mode, data: &mut [u8]) -> Result<(), Box<dyn Error>>;
 }
 
@@ -122,6 +121,8 @@ macro_rules! test_tls_bench_harnesses {
     $(
         mod $lib_name {
             use super::*;
+            use CipherSuite::*;
+            use ECGroup::*;
 
             #[test]
             fn test_handshake() {
@@ -134,9 +135,6 @@ macro_rules! test_tls_bench_harnesses {
 
             #[test]
             fn test_different_crypto_config() {
-                use CipherSuite::*;
-                use ECGroup::*;
-
                 let (mut harness, mut crypto_config);
                 for cipher_suite in [AES_128_GCM_SHA256, AES_256_GCM_SHA384].iter() {
                     for ec_group in [SECP256R1, X25519].iter() {
@@ -150,11 +148,18 @@ macro_rules! test_tls_bench_harnesses {
 
             #[test]
             fn test_transfer() {
+                // use a large buffer to test across TLS record boundaries
                 let mut buf = [0x56u8; 1000000];
-                let mut harness = <$harness_type>::default().unwrap();
-                harness.handshake().unwrap();
-                harness.transfer(Mode::Client, &mut buf).unwrap();
-                harness.transfer(Mode::Server, &mut buf).unwrap();
+                let (mut harness, mut crypto_config);
+                for cipher_suite in [AES_128_GCM_SHA256, AES_256_GCM_SHA384].iter() {
+                    for ec_group in [SECP256R1, X25519].iter() {
+                        crypto_config = CryptoConfig { cipher_suite: cipher_suite.clone(), ec_group: ec_group.clone() };
+                        harness = <$harness_type>::new(&crypto_config).unwrap();
+                        harness.handshake().unwrap();
+                        harness.transfer(Mode::Client, &mut buf).unwrap();
+                        harness.transfer(Mode::Server, &mut buf).unwrap();
+                    }
+                }
             }
         }
     )*

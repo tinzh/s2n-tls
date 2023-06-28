@@ -19,5 +19,5 @@ name = "handshake"
 harness = false
 
 [[bench]]
-name = "bulk-transfer"
+name = "throughput"
 harness = false
