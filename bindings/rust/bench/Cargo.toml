@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 s2n-tls = { path = "../s2n-tls" }
-rustls = "0.21"
+rustls = { path = "target/rustls/rustls" }
 rustls-pemfile = "1.0"
 openssl = "0.10"
 errno = "0.3"
