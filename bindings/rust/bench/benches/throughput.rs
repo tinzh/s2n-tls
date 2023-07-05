@@ -4,7 +4,6 @@
 use bench::{
     CipherSuite::{self, *},
     CryptoConfig,
-    ECGroup::X25519,
     Mode, OpenSslHarness, RustlsHarness, S2NHarness, TlsBenchHarness,
 };
 use criterion::{
@@ -19,15 +18,12 @@ pub fn bench_throughput_cipher_suite(c: &mut Criterion) {
     fn bench_throughput_for_library<T: TlsBenchHarness>(
         bench_group: &mut BenchmarkGroup<WallTime>,
         shared_buf: &mut [u8],
-        cipher_suite: &CipherSuite,
+        cipher_suite: CipherSuite,
     ) {
         bench_group.bench_function(type_name::<T>(), |b| {
             b.iter_batched_ref(
                 || {
-                    let mut harness = T::new(&CryptoConfig {
-                        cipher_suite: *cipher_suite,
-                        ec_group: X25519,
-                    })
+                    let mut harness = T::new(CryptoConfig::new(cipher_suite, Default::default(), Default::default()), Default::default())
                     .unwrap();
                     harness.handshake().unwrap();
                     harness
@@ -51,17 +47,17 @@ pub fn bench_throughput_cipher_suite(c: &mut Criterion) {
         bench_throughput_for_library::<S2NHarness>(
             &mut bench_group,
             &mut shared_buf,
-            &cipher_suite,
+            cipher_suite,
         );
         bench_throughput_for_library::<RustlsHarness>(
             &mut bench_group,
             &mut shared_buf,
-            &cipher_suite,
+            cipher_suite,
         );
         bench_throughput_for_library::<OpenSslHarness>(
             &mut bench_group,
             &mut shared_buf,
-            &cipher_suite,
+            cipher_suite,
         );
     }
 }

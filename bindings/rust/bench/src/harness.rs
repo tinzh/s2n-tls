@@ -1,6 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::{get_cert_path, PemType};
 use std::{
     cell::RefCell,
     collections::VecDeque,
@@ -10,8 +11,10 @@ use std::{
     rc::Rc,
 };
 
-pub fn read_to_bytes(path: &str) -> Vec<u8> {
-    read_to_string(path).unwrap().into_bytes()
+pub fn read_to_bytes(pem_type: &PemType, sig_type: &SigType) -> Vec<u8> {
+    read_to_string(get_cert_path(pem_type, sig_type))
+        .unwrap()
+        .into_bytes()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,7 +33,7 @@ pub enum HandshakeType {
 // these parameters were the only ones readily usable for all three libaries:
 // s2n-tls, rustls, and openssl
 #[allow(non_camel_case_types)]
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum CipherSuite {
     #[default]
     AES_128_GCM_SHA256,
@@ -44,10 +47,29 @@ pub enum ECGroup {
     X25519,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SigType {
+    Rsa2048,
+    Rsa4096,
+    #[default]
+    Ec384,
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct CryptoConfig {
     pub cipher_suite: CipherSuite,
     pub ec_group: ECGroup,
+    pub sig_type: SigType,
+}
+
+impl CryptoConfig {
+    pub fn new(cipher_suite: CipherSuite, ec_group: ECGroup, sig_type: SigType) -> Self {
+        Self {
+            cipher_suite,
+            ec_group,
+            sig_type,
+        }
+    }
 }
 
 pub trait TlsBenchHarness: Sized {
@@ -134,6 +156,7 @@ macro_rules! test_tls_bench_harnesses {
             use CipherSuite::*;
             use ECGroup::*;
             use HandshakeType::*;
+            use SigType::*;
 
             #[test]
             fn test_handshake_config() {
@@ -141,15 +164,17 @@ macro_rules! test_tls_bench_harnesses {
                 for handshake_type in [Full, mTLS] {
                     for cipher_suite in [AES_128_GCM_SHA256, AES_256_GCM_SHA384] {
                         for ec_group in [SECP256R1, X25519] {
-                            crypto_config = CryptoConfig { cipher_suite: cipher_suite.clone(), ec_group: ec_group.clone() };
-                            harness = <$harness_type>::new(crypto_config, handshake_type).unwrap();
+                            for sig_type in [Ec384, Rsa2048, Rsa4096] {
+                                crypto_config = CryptoConfig::new(cipher_suite, ec_group, sig_type);
+                                harness = <$harness_type>::new(crypto_config, handshake_type).unwrap();
 
-                            assert!(!harness.handshake_completed());
-                            harness.handshake().unwrap();
-                            assert!(harness.handshake_completed());
+                                assert!(!harness.handshake_completed());
+                                harness.handshake().unwrap();
+                                assert!(harness.handshake_completed());
 
-                            assert!(harness.negotiated_tls13());
-                            assert_eq!(cipher_suite, harness.get_negotiated_cipher_suite());
+                                assert!(harness.negotiated_tls13());
+                                assert_eq!(cipher_suite, harness.get_negotiated_cipher_suite());
+                            }
                         }
                     }
                 }
@@ -160,9 +185,9 @@ macro_rules! test_tls_bench_harnesses {
                 // use a large buffer to test across TLS record boundaries
                 let mut buf = [0x56u8; 1000000];
                 let (mut harness, mut crypto_config);
-                for cipher_suite in [AES_128_GCM_SHA256, AES_256_GCM_SHA384].iter() {
-                    for ec_group in [SECP256R1, X25519].iter() {
-                        crypto_config = CryptoConfig { cipher_suite: cipher_suite.clone(), ec_group: ec_group.clone() };
+                for cipher_suite in [AES_128_GCM_SHA256, AES_256_GCM_SHA384] {
+                    for ec_group in [SECP256R1, X25519] {
+                        crypto_config = CryptoConfig::new(cipher_suite, ec_group, Default::default());
                         harness = <$harness_type>::new(crypto_config, Default::default()).unwrap();
                         harness.handshake().unwrap();
                         harness.transfer(Mode::Client, &mut buf).unwrap();

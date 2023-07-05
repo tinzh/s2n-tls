@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::{
-    harness::{
-        read_to_bytes, CipherSuite, CryptoConfig, ECGroup, HandshakeType, Mode, TlsBenchHarness,
-    },
-    CA_CERT_PATH, CLIENT_CERT_CHAIN_PATH, CLIENT_KEY_PATH, SERVER_CERT_CHAIN_PATH, SERVER_KEY_PATH,
+    harness::{read_to_bytes, CipherSuite, CryptoConfig, ECGroup, HandshakeType, Mode, TlsBenchHarness},
+    PemType::*,
 };
 use s2n_tls::{
     callbacks::VerifyHostNameCallback,
@@ -98,7 +96,7 @@ impl S2NHarness {
         // add CA cert if needed
         if handshake_type == HandshakeType::mTLS || mode == Mode::Client {
             builder
-                .trust_pem(read_to_bytes(CA_CERT_PATH).as_slice())?
+                .trust_pem(read_to_bytes(&CACert, &crypto_config.sig_type).as_slice())?
                 .set_verify_host_callback(HostNameHandler {
                     expected_server_name: "localhost",
                 })?;
@@ -107,12 +105,12 @@ impl S2NHarness {
         // add auth certs if needed
         if mode == Mode::Server || handshake_type == HandshakeType::mTLS {
             let (cert_chain_path, key_path) = match mode {
-                Mode::Server => (SERVER_CERT_CHAIN_PATH, SERVER_KEY_PATH),
-                Mode::Client => (CLIENT_CERT_CHAIN_PATH, CLIENT_KEY_PATH),
+                Mode::Server => (&ServerCertChain, &ServerKey),
+                Mode::Client => (&ClientCertChain, &ClientKey),
             };
             builder.load_pem(
-                read_to_bytes(cert_chain_path).as_slice(),
-                read_to_bytes(key_path).as_slice(),
+                read_to_bytes(cert_chain_path, &crypto_config.sig_type).as_slice(),
+                read_to_bytes(key_path, &crypto_config.sig_type).as_slice(),
             )?;
         }
 
