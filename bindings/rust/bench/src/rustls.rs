@@ -76,8 +76,9 @@ impl TlsBenchHarness for RustlsHarness {
     fn new(
         crypto_config: CryptoConfig,
         handshake_type: HandshakeType,
+        buffer: ConnectedBuffer,
     ) -> Result<Self, Box<dyn Error>> {
-        let client_buf = ConnectedBuffer::new();
+        let client_buf = buffer;
         let server_buf = client_buf.clone_inverse();
 
         let cipher_suite = match crypto_config.cipher_suite {
@@ -108,7 +109,9 @@ impl TlsBenchHarness for RustlsHarness {
                     Self::get_key(&ClientKey, &crypto_config.sig_type)?,
                 )?,
                 server_builder.with_client_cert_verifier(Arc::new(
-                    AllowAnyAuthenticatedClient::new(Self::get_root_cert_store(&crypto_config.sig_type)?),
+                    AllowAnyAuthenticatedClient::new(Self::get_root_cert_store(
+                        &crypto_config.sig_type,
+                    )?),
                 )),
             ),
             HandshakeType::Full => (

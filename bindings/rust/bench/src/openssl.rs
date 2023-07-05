@@ -3,7 +3,9 @@
 
 use crate::{
     get_cert_path,
-    harness::{CipherSuite, ConnectedBuffer, CryptoConfig, ECGroup, HandshakeType, Mode, TlsBenchHarness},
+    harness::{
+        CipherSuite, ConnectedBuffer, CryptoConfig, ECGroup, HandshakeType, Mode, TlsBenchHarness,
+    },
     PemType::*,
 };
 use openssl::ssl::{
@@ -54,8 +56,9 @@ impl TlsBenchHarness for OpenSslHarness {
     fn new(
         crypto_config: CryptoConfig,
         handshake_type: HandshakeType,
+        buffer: ConnectedBuffer,
     ) -> Result<Self, Box<dyn Error>> {
-        let client_buf = ConnectedBuffer::new();
+        let client_buf = buffer;
         let server_buf = client_buf.clone_inverse();
 
         let cipher_suite = match crypto_config.cipher_suite {
@@ -82,8 +85,14 @@ impl TlsBenchHarness for OpenSslHarness {
         )?;
 
         if handshake_type == HandshakeType::mTLS {
-            client_builder.set_certificate_chain_file(get_cert_path(&ClientCertChain, &crypto_config.sig_type))?;
-            client_builder.set_private_key_file(get_cert_path(&ClientKey, &crypto_config.sig_type), SslFiletype::PEM)?;
+            client_builder.set_certificate_chain_file(get_cert_path(
+                &ClientCertChain,
+                &crypto_config.sig_type,
+            ))?;
+            client_builder.set_private_key_file(
+                get_cert_path(&ClientKey, &crypto_config.sig_type),
+                SslFiletype::PEM,
+            )?;
             server_builder.set_ca_file(get_cert_path(&CACert, &crypto_config.sig_type))?;
             server_builder.set_verify(SslVerifyMode::FAIL_IF_NO_PEER_CERT | SslVerifyMode::PEER);
         }
