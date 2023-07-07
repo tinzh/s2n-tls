@@ -57,8 +57,11 @@ pub fn read_memory_bench(c: &mut Criterion<Bytes>) {
     group.sample_size(100);
     group.warm_up_time(Duration::from_nanos(1)); // no warm up because not timing anything
 
-    for name in ["s2n-tls", "rustls", "openssl"] {
-        read_library(&mut group, name);
+    read_library(&mut group, "s2n-tls");
+    #[cfg(not(feature = "s2n-only"))]
+    {
+        read_library(&mut group, "rustls");
+        read_library(&mut group, "openssl");
     }
 
     group.finish();

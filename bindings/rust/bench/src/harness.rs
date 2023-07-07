@@ -17,6 +17,21 @@ pub fn read_to_bytes(pem_type: &PemType, sig_type: &SigType) -> Vec<u8> {
         .into_bytes()
 }
 
+pub fn openssl_version_str() -> String {
+    let version_num = openssl::version::number() as u64;
+    let patch: u8 = (version_num >> 4) as u8;
+    let fix = (version_num >> 12) as u8;
+    let minor = (version_num >> 20) as u8;
+    let major = (version_num >> 28) as u8;
+    format!(
+        "openssl{}.{}.{}{}",
+        major,
+        minor,
+        fix,
+        (b'a' + patch - 1) as char
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     Client,

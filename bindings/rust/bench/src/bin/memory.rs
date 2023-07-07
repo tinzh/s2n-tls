@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use bench::{harness::ConnectedBuffer, OpenSslHarness, RustlsHarness, S2NHarness, TlsBenchHarness};
-use std::{fs::create_dir_all, path::Path};
+use std::{env, fs::create_dir_all, path::Path};
 
 fn memory_bench<T: TlsBenchHarness>(dir_name: &str) {
     println!("testing {dir_name}");
@@ -51,13 +51,21 @@ fn memory_bench<T: TlsBenchHarness>(dir_name: &str) {
         // take memory snapshot
         crabgrind::monitor_command(format!("snapshot target/memory/{dir_name}/{i}.snapshot"))
             .unwrap();
+
+        // take xtree snapshot
+        crabgrind::monitor_command(format!("xtmemory target/memory/{dir_name}/xtree.out")).unwrap();
     }
 }
 
 fn main() {
     assert!(!cfg!(debug_assertions), "need to run in release mode");
 
-    memory_bench::<S2NHarness>("s2n-tls");
-    memory_bench::<RustlsHarness>("rustls");
-    memory_bench::<OpenSslHarness>("openssl");
+    let lib_name = env::args().nth(1).expect("need argument");
+
+    match lib_name.as_str() {
+        "s2n-tls" => memory_bench::<S2NHarness>("s2n-tls"),
+        "rustls" => memory_bench::<RustlsHarness>("rustls"),
+        "openssl" => memory_bench::<OpenSslHarness>("openssl"),
+        &_ => panic!("invalid library name"),
+    }
 }

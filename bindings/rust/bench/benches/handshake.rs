@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use bench::{
+    harness::openssl_version_str,
     CryptoConfig,
     ECGroup::{self, *},
     HandshakeType::{self, *},
@@ -12,7 +13,6 @@ use bench::{
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BatchSize, BenchmarkGroup, Criterion,
 };
-use std::any::type_name;
 
 pub fn bench_handshake_params(c: &mut Criterion) {
     fn bench_handshake_for_library<T: TlsBenchHarness>(
@@ -32,7 +32,6 @@ pub fn bench_handshake_params(c: &mut Criterion) {
                         handshake_type,
                         Default::default(),
                     )
-                    .unwrap()
                 },
                 |harness| {
                     // if harness invalid, do nothing but don't panic
@@ -71,12 +70,12 @@ pub fn bench_handshake_params(c: &mut Criterion) {
                     );
                     bench_handshake_for_library::<OpenSslHarness>(
                         &mut bench_group,
-                        "openssl",
+                        &openssl_version_str(),
                         handshake_type,
                         ec_group,
                         sig_type,
                     );
-                }  
+                }
             }
         }
     }
