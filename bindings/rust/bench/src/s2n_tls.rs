@@ -220,4 +220,9 @@ impl TlsBenchHarness for S2NHarness {
         assert!(recv_conn.poll_recv(data).is_ready());
         Ok(())
     }
+
+    fn restrict_buffers(&mut self) {
+        self.client_conn.release_buffers().unwrap();
+        self.server_conn.release_buffers().unwrap();
+    }
 }

@@ -164,4 +164,8 @@ impl TlsBenchHarness for OpenSslHarness {
 
         Ok(())
     }
+
+    fn restrict_buffers(&mut self) {
+        
+    }
 }

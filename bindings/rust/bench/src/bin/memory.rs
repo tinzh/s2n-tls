@@ -48,6 +48,13 @@ fn memory_bench<T: TlsBenchHarness>(dir_name: &str) {
             .handshake()
             .unwrap();
 
+        // release memory
+        harnesses
+            .as_mut_slice()
+            .last_mut()
+            .unwrap()
+            .restrict_buffers();
+
         // take memory snapshot
         crabgrind::monitor_command(format!("snapshot target/memory/{dir_name}/{i}.snapshot"))
             .unwrap();

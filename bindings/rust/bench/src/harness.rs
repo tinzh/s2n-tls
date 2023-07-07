@@ -115,6 +115,9 @@ pub trait TlsBenchHarness: Sized {
 
     /// Transfer given data one-way between connections
     fn transfer(&mut self, sender: Mode, data: &mut [u8]) -> Result<(), Box<dyn Error>>;
+
+    /// Release buffers
+    fn restrict_buffers(&mut self);
 }
 
 /// Wrapper of two shared buffers to pass as stream

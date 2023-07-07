@@ -78,7 +78,7 @@ cargo clean
 # ----- bench everything (including memory) -----
 
 cd bench
-cargo bench
+# cargo bench
 ./bench-memory.sh
 
 # restore Cargo.toml
