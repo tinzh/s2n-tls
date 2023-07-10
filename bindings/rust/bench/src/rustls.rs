@@ -202,8 +202,13 @@ impl TlsBenchHarness for RustlsHarness {
         Ok(())
     }
 
-    fn restrict_buffers(&mut self) {
+    fn shrink_connection_buffers(&mut self) {
         self.client_conn.set_buffer_limit(Some(1));
         self.server_conn.set_buffer_limit(Some(1));
+    }
+
+    fn shrink_connected_buffers(&mut self) {
+        self.client_buf.shrink();
+        self.server_buf.shrink();
     }
 }

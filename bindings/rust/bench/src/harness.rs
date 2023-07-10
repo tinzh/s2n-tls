@@ -116,8 +116,11 @@ pub trait TlsBenchHarness: Sized {
     /// Transfer given data one-way between connections
     fn transfer(&mut self, sender: Mode, data: &mut [u8]) -> Result<(), Box<dyn Error>>;
 
-    /// Release buffers
-    fn restrict_buffers(&mut self);
+    /// Release buffers in connections
+    fn shrink_connection_buffers(&mut self);
+
+    /// Release connected buffers for IO between connections
+    fn shrink_connected_buffers(&mut self);
 }
 
 /// Wrapper of two shared buffers to pass as stream
@@ -140,6 +143,7 @@ impl ConnectedBuffer {
 
         ConnectedBuffer { recv, send }
     }
+
     /// Make a new struct that shares internal buffers but swapped, ex.
     /// `write()` writes to the buffer that the inverse `read()`s from
     pub fn clone_inverse(&self) -> Self {
@@ -147,6 +151,14 @@ impl ConnectedBuffer {
             recv: Rc::clone(&self.send),
             send: Rc::clone(&self.recv),
         }
+    }
+
+    /// Clear buffers and shrink to fit
+    pub fn shrink(&mut self) {
+        self.recv.borrow_mut().clear();
+        self.recv.borrow_mut().shrink_to_fit();
+        self.send.borrow_mut().clear();
+        self.send.borrow_mut().shrink_to_fit();
     }
 }
 

@@ -221,8 +221,13 @@ impl TlsBenchHarness for S2NHarness {
         Ok(())
     }
 
-    fn restrict_buffers(&mut self) {
+    fn shrink_connection_buffers(&mut self) {
         self.client_conn.release_buffers().unwrap();
         self.server_conn.release_buffers().unwrap();
+    }
+
+    fn shrink_connected_buffers(&mut self) {
+        self._client_buf.shrink();
+        self._server_buf.shrink();
     }
 }

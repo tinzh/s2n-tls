@@ -165,7 +165,11 @@ impl TlsBenchHarness for OpenSslHarness {
         Ok(())
     }
 
-    fn restrict_buffers(&mut self) {
+    fn shrink_connected_buffers(&mut self) {
+        
+    }
+
+    fn shrink_connection_buffers(&mut self) {
         
     }
 }

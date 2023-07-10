@@ -30,6 +30,9 @@ fn memory_bench<T: TlsBenchHarness>(dir_name: &str) {
 
     // make and handshake 100 harness
     for i in 1..101 {
+        // reserve just enough space for one harness
+        harnesses.reserve(i+1);
+
         // put new harness directly into harness vec
         harnesses.push(
             T::new(
@@ -53,15 +56,20 @@ fn memory_bench<T: TlsBenchHarness>(dir_name: &str) {
             .as_mut_slice()
             .last_mut()
             .unwrap()
-            .restrict_buffers();
+            .shrink_connection_buffers();
 
         // take memory snapshot
         crabgrind::monitor_command(format!("snapshot target/memory/{dir_name}/{i}.snapshot"))
             .unwrap();
-
-        // take xtree snapshot
-        crabgrind::monitor_command(format!("xtmemory target/memory/{dir_name}/xtree.out")).unwrap();
     }
+
+    // release all ConnectedBuffers to have accurate xtree
+    for harness in harnesses.iter_mut() {
+        harness.shrink_connected_buffers();
+    }
+    
+    // take xtree snapshot
+    crabgrind::monitor_command(format!("xtmemory target/memory/{dir_name}/xtree.out")).unwrap();
 }
 
 fn main() {

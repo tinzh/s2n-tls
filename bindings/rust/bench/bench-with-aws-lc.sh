@@ -37,7 +37,7 @@ sed -i 's/rustls = .*/rustls = { path = "target\/rustls\/rustls" }/' Cargo.toml
 
 cd $repo_dir
 
-# only do build if libcrypto.a is not present
+# only build aws-lc if libcrypto.a is not present
 if [ ! -e libcrypto-root/lib/libcrypto.a ]
 then
     # clean up past builds
@@ -55,6 +55,8 @@ then
     cmake -B build -DCMAKE_INSTALL_PREFIX=$repo_dir/libcrypto-root/ -DBUILD_TESTING=OFF -DBUILD_LIBSSL=OFF
     cmake --build ./build -j $(nproc)
     make -C build install
+else 
+    echo "using found libcrypto.a, not building aws-lc"
 fi
 
 
@@ -65,9 +67,9 @@ cmake . -Bbuild -DCMAKE_PREFIX_PATH=$repo_dir/libcrypto-root/ -DS2N_INTERN_LIBCR
 cmake --build ./build -j $(nproc)
 
 # tell linker where s2n-tls was built
-export S2N_TLS_LIB_DIR=$repo_dir/build/lib
-export S2N_TLS_INCLUDE_DIR=$repo_dir/api
-export LD_LIBRARY_PATH=$S2N_TLS_LIB_DIR:$LD_LIBRARY_PATH
+# export S2N_TLS_LIB_DIR=$repo_dir/build/lib
+# export S2N_TLS_INCLUDE_DIR=$repo_dir/api
+# export LD_LIBRARY_PATH=$S2N_TLS_LIB_DIR:$LD_LIBRARY_PATH
 
 # generate bindings with aws-lc
 cd bindings/rust
@@ -78,11 +80,11 @@ cargo clean
 # ----- bench everything (including memory) -----
 
 cd bench
-# cargo bench
+cargo bench
 ./bench-memory.sh
 
 # restore Cargo.toml
-sed -i "s/rustls = { path = \"target\/rustls\/rustls\" }/$default_rustls/" Cargo.toml
+sed -i "s|rustls = { path = \"target\/rustls\/rustls\" }|$default_rustls|" Cargo.toml
 
 
 popd
