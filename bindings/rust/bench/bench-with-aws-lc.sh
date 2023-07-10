@@ -22,11 +22,16 @@ repo_dir=`pwd`
 
 # clone rustls to bench/target/rustls
 cd $repo_dir/bindings/rust/bench
-cargo clean
-git clone --depth=1 https://github.com/rustls/rustls target/rustls
+rm -rf target/rustls
+git clone https://github.com/rustls/rustls target/rustls
+cd target/rustls
+git checkout 'v/0.21.5'
+cd ../..
 
 # change rustls to use aws-lc-rs
 sed -i 's/ring = .*/ring = { package = "aws-lc-rs" }/' target/rustls/rustls/Cargo.toml
+
+exit 1
 
 # change bench to use custom rustls
 default_rustls="$(grep 'rustls =' Cargo.toml)"
@@ -73,7 +78,7 @@ cmake --build ./build -j $(nproc)
 
 # generate bindings with aws-lc
 cd bindings/rust
-cargo clean
+rm -rf target
 ./generate.sh
 
 

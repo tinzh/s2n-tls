@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 s2n-tls = { path = "../s2n-tls" }
-rustls = { path = "target/rustls/rustls" }
+rustls = "0.21"
 rustls-pemfile = "1.0"
 openssl = { version = "0.10", features = [ "vendored" ] }
 errno = "0.3"
@@ -20,6 +20,9 @@ semver = "1.0"
 
 [dev-dependencies]
 criterion = "0.3"
+
+[patch.crates-io]
+rustls = { path = "target/rustls/rustls" }
 
 [features]
 s2n-only = []
