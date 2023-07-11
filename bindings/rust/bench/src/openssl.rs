@@ -4,41 +4,106 @@
 use crate::{
     get_cert_path,
     harness::{
-        CipherSuite, ConnectedBuffer, CryptoConfig, ECGroup, HandshakeType, Mode, TlsBenchHarness,
+        CipherSuite, ConnectedBuffer, CryptoConfig, ECGroup, HandshakeType, Mode, TlsConnection,
     },
     PemType::*,
 };
 use openssl::ssl::{
-    ErrorCode, Ssl, SslContext, SslContextBuilder, SslFiletype, SslMethod, SslStream,
-    SslVerifyMode, SslVersion,
+    ErrorCode, Ssl, SslContext, SslFiletype, SslMethod, SslStream, SslVerifyMode, SslVersion,
 };
 use std::{
     error::Error,
     io::{Read, Write},
 };
 
-pub struct OpenSslHarness {
-    client_conn: SslStream<ConnectedBuffer>,
-    server_conn: SslStream<ConnectedBuffer>,
+pub struct OpenSslConnection {
+    connected_buffer: ConnectedBuffer,
+    connection: SslStream<ConnectedBuffer>,
 }
 
-impl OpenSslHarness {
-    fn common_config(
-        builder: &mut SslContextBuilder,
-        cipher_suite: &str,
-        ec_key: &str,
-    ) -> Result<(), Box<dyn Error>> {
+impl TlsConnection for OpenSslConnection {
+    type Config = SslContext;
+
+    /// Make a config
+    fn make_config(
+        mode: Mode,
+        crypto_config: CryptoConfig,
+        handshake_type: HandshakeType,
+    ) -> Result<Self::Config, Box<dyn Error>> {
+        let cipher_suite = match crypto_config.cipher_suite {
+            CipherSuite::AES_128_GCM_SHA256 => "TLS_AES_128_GCM_SHA256",
+            CipherSuite::AES_256_GCM_SHA384 => "TLS_AES_256_GCM_SHA384",
+        };
+
+        let ec_key = match crypto_config.ec_group {
+            ECGroup::SECP256R1 => "P-256",
+            ECGroup::X25519 => "X25519",
+        };
+
+        let ssl_method = match mode {
+            Mode::Client => SslMethod::tls_client(),
+            Mode::Server => SslMethod::tls_server(),
+        };
+        let mut builder = SslContext::builder(ssl_method)?;
         builder.set_min_proto_version(Some(SslVersion::TLS1_3))?;
         builder.set_ciphersuites(cipher_suite)?;
         builder.set_groups_list(ec_key)?;
-        Ok(())
+
+        if mode == Mode::Client {
+            builder.set_ca_file(get_cert_path(&CACert, &crypto_config.sig_type))?;
+            builder.set_verify(SslVerifyMode::FAIL_IF_NO_PEER_CERT | SslVerifyMode::PEER);
+
+            if handshake_type == HandshakeType::MutualAuth {
+                builder.set_certificate_chain_file(get_cert_path(
+                    &ClientCertChain,
+                    &crypto_config.sig_type,
+                ))?;
+                builder.set_private_key_file(
+                    get_cert_path(&ClientKey, &crypto_config.sig_type),
+                    SslFiletype::PEM,
+                )?;
+            }
+        }
+
+        if mode == Mode::Server {
+            builder.set_certificate_chain_file(get_cert_path(
+                &ServerCertChain,
+                &crypto_config.sig_type,
+            ))?;
+            builder.set_private_key_file(
+                get_cert_path(&ServerKey, &crypto_config.sig_type),
+                SslFiletype::PEM,
+            )?;
+
+            if handshake_type == HandshakeType::MutualAuth {
+                builder.set_ca_file(get_cert_path(&CACert, &crypto_config.sig_type))?;
+                builder.set_verify(SslVerifyMode::FAIL_IF_NO_PEER_CERT | SslVerifyMode::PEER);
+            }
+        }
+
+        Ok(builder.build())
     }
-    /// Process handshake for one connection, treating blocking errors as `Ok`
-    fn handshake_conn(&mut self, mode: Mode) -> Result<(), Box<dyn Error>> {
-        let result = match mode {
-            Mode::Client => self.client_conn.connect(),
-            Mode::Server => self.server_conn.accept(),
+
+    /// Make connection from existing config and buffer
+    fn new_from_config(
+        config: &Self::Config,
+        connected_buffer: ConnectedBuffer,
+    ) -> Result<Self, Box<dyn Error>> {
+        let connection = SslStream::new(Ssl::new(config)?, connected_buffer.clone())?;
+        Ok(Self {
+            connected_buffer,
+            connection,
+        })
+    }
+
+    /// Run one handshake step on initialized connections
+    fn handshake(&mut self) -> Result<(), Box<dyn Error>> {
+        let result = if self.connection.ssl().is_server() {
+            self.connection.accept()
+        } else {
+            self.connection.connect()
         };
+
         match result {
             Ok(_) => Ok(()),
             Err(err) => {
@@ -50,80 +115,14 @@ impl OpenSslHarness {
             }
         }
     }
-}
-
-impl TlsBenchHarness for OpenSslHarness {
-    fn new(
-        crypto_config: CryptoConfig,
-        handshake_type: HandshakeType,
-        buffer: ConnectedBuffer,
-    ) -> Result<Self, Box<dyn Error>> {
-        let client_buf = buffer;
-        let server_buf = client_buf.clone_inverse();
-
-        let cipher_suite = match crypto_config.cipher_suite {
-            CipherSuite::AES_128_GCM_SHA256 => "TLS_AES_128_GCM_SHA256",
-            CipherSuite::AES_256_GCM_SHA384 => "TLS_AES_256_GCM_SHA384",
-        };
-
-        let ec_key = match crypto_config.ec_group {
-            ECGroup::SECP256R1 => "P-256",
-            ECGroup::X25519 => "X25519",
-        };
-
-        let mut client_builder = SslContext::builder(SslMethod::tls_client())?;
-        Self::common_config(&mut client_builder, cipher_suite, ec_key)?;
-        client_builder.set_ca_file(get_cert_path(&CACert, &crypto_config.sig_type))?;
-
-        let mut server_builder = SslContext::builder(SslMethod::tls_server())?;
-        Self::common_config(&mut server_builder, cipher_suite, ec_key)?;
-        server_builder
-            .set_certificate_chain_file(get_cert_path(&ServerCertChain, &crypto_config.sig_type))?;
-        server_builder.set_private_key_file(
-            get_cert_path(&ServerKey, &crypto_config.sig_type),
-            SslFiletype::PEM,
-        )?;
-
-        if handshake_type == HandshakeType::mTLS {
-            client_builder.set_certificate_chain_file(get_cert_path(
-                &ClientCertChain,
-                &crypto_config.sig_type,
-            ))?;
-            client_builder.set_private_key_file(
-                get_cert_path(&ClientKey, &crypto_config.sig_type),
-                SslFiletype::PEM,
-            )?;
-            server_builder.set_ca_file(get_cert_path(&CACert, &crypto_config.sig_type))?;
-            server_builder.set_verify(SslVerifyMode::FAIL_IF_NO_PEER_CERT | SslVerifyMode::PEER);
-        }
-
-        let client_config = client_builder.build();
-        let server_config = server_builder.build();
-
-        let client_conn = SslStream::new(Ssl::new(&client_config)?, client_buf)?;
-        let server_conn = SslStream::new(Ssl::new(&server_config)?, server_buf)?;
-
-        Ok(Self {
-            client_conn,
-            server_conn,
-        })
-    }
-
-    fn handshake(&mut self) -> Result<(), Box<dyn Error>> {
-        for _ in 0..2 {
-            self.handshake_conn(Mode::Client)?;
-            self.handshake_conn(Mode::Server)?;
-        }
-        Ok(())
-    }
 
     fn handshake_completed(&self) -> bool {
-        self.client_conn.ssl().is_init_finished() && self.server_conn.ssl().is_init_finished()
+        self.connection.ssl().is_init_finished()
     }
 
     fn get_negotiated_cipher_suite(&self) -> CipherSuite {
         let cipher_suite = self
-            .client_conn
+            .connection
             .ssl()
             .current_cipher()
             .expect("Handshake not completed")
@@ -136,40 +135,43 @@ impl TlsBenchHarness for OpenSslHarness {
     }
 
     fn negotiated_tls13(&self) -> bool {
-        self.client_conn
+        self.connection
             .ssl()
             .version2() // version() -> &str is deprecated, version2() returns an enum instead
             .expect("Handshake not completed")
             == SslVersion::TLS1_3
     }
 
-    fn transfer(&mut self, sender: Mode, data: &mut [u8]) -> Result<(), Box<dyn Error>> {
-        let (send_conn, recv_conn) = match sender {
-            Mode::Client => (&mut self.client_conn, &mut self.server_conn),
-            Mode::Server => (&mut self.server_conn, &mut self.client_conn),
-        };
-
-        let data_len = data.len();
-
+    /// Send application data to ConnectedBuffer
+    fn send(&mut self, data: &[u8]) -> Result<(), Box<dyn Error>> {
         let mut write_offset = 0;
-        while write_offset < data_len {
-            write_offset += send_conn.write(&data[write_offset..data_len])?;
-            send_conn.flush()?;
+        while write_offset < data.len() {
+            write_offset += self.connection.write(&data[write_offset..data.len()])?;
+            self.connection.flush()?; // make sure internal buffers don't fill up
         }
-
-        let mut read_offset = 0;
-        while read_offset < data_len {
-            read_offset += recv_conn.read(data)?
-        }
-
         Ok(())
     }
 
-    fn shrink_connected_buffers(&mut self) {
-        
+    /// Receive application data from ConnectedBuffer
+    fn recv(&mut self, data: &mut [u8]) -> Result<(), Box<dyn Error>> {
+        let data_len = data.len();
+        let mut read_offset = 0;
+        while read_offset < data.len() {
+            read_offset += self.connection.read(&mut data[read_offset..data_len])?
+        }
+        Ok(())
     }
 
-    fn shrink_connection_buffers(&mut self) {
-        
+    /// Release buffers in connections
+    fn shrink_connection_buffers(&mut self) {}
+
+    /// Release connected buffers for IO between connections
+    fn shrink_connected_buffer(&mut self) {
+        self.connected_buffer.shrink();
+    }
+
+    /// Get internal connected buffer
+    fn clone_connected_buffer(&self) -> ConnectedBuffer {
+        self.connected_buffer.clone()
     }
 }

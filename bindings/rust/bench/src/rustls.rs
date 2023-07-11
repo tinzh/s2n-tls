@@ -4,10 +4,9 @@
 use crate::{
     harness::{
         read_to_bytes, CipherSuite, ConnectedBuffer, CryptoConfig, ECGroup, HandshakeType, Mode,
-        TlsBenchHarness,
     },
     PemType::{self, *},
-    SigType,
+    SigType, TlsConnection,
 };
 use rustls::{
     cipher_suite::{TLS13_AES_128_GCM_SHA256, TLS13_AES_256_GCM_SHA384},
@@ -27,14 +26,12 @@ use std::{
     sync::Arc,
 };
 
-pub struct RustlsHarness {
-    client_buf: ConnectedBuffer,
-    server_buf: ConnectedBuffer,
-    client_conn: Connection,
-    server_conn: Connection,
+pub struct RustlsConnection {
+    connected_buffer: ConnectedBuffer,
+    connection: Connection,
 }
 
-impl RustlsHarness {
+impl RustlsConnection {
     fn get_root_cert_store(sig_type: &SigType) -> Result<RootCertStore, Box<dyn Error>> {
         let root_cert =
             Certificate(certs(&mut BufReader::new(&*read_to_bytes(&CACert, sig_type)))?.remove(0));
@@ -72,15 +69,20 @@ impl RustlsHarness {
     }
 }
 
-impl TlsBenchHarness for RustlsHarness {
-    fn new(
+pub enum RustlsConfig {
+    Client(Arc<ClientConfig>),
+    Server(Arc<ServerConfig>),
+}
+
+impl TlsConnection for RustlsConnection {
+    type Config = RustlsConfig;
+
+    /// Make a config
+    fn make_config(
+        mode: Mode,
         crypto_config: CryptoConfig,
         handshake_type: HandshakeType,
-        buffer: ConnectedBuffer,
-    ) -> Result<Self, Box<dyn Error>> {
-        let client_buf = buffer;
-        let server_buf = client_buf.clone_inverse();
-
+    ) -> Result<Self::Config, Box<dyn Error>> {
         let cipher_suite = match crypto_config.cipher_suite {
             CipherSuite::AES_128_GCM_SHA256 => TLS13_AES_128_GCM_SHA256,
             CipherSuite::AES_256_GCM_SHA384 => TLS13_AES_256_GCM_SHA384,
@@ -91,69 +93,75 @@ impl TlsBenchHarness for RustlsHarness {
             ECGroup::X25519 => &X25519,
         };
 
-        let client_builder = ClientConfig::builder()
-            .with_cipher_suites(&[cipher_suite])
-            .with_kx_groups(&[kx_group])
-            .with_protocol_versions(&[&TLS13])?
-            .with_root_certificates(Self::get_root_cert_store(&crypto_config.sig_type)?);
+        match mode {
+            Mode::Client => {
+                let builder = ClientConfig::builder()
+                    .with_cipher_suites(&[cipher_suite])
+                    .with_kx_groups(&[kx_group])
+                    .with_protocol_versions(&[&TLS13])?
+                    .with_root_certificates(Self::get_root_cert_store(&crypto_config.sig_type)?);
+                let config = match handshake_type {
+                    HandshakeType::ServerAuth => builder.with_no_client_auth(),
+                    HandshakeType::MutualAuth => builder.with_client_auth_cert(
+                        Self::get_cert_chain(&ClientCertChain, &crypto_config.sig_type)?,
+                        Self::get_key(&ClientKey, &crypto_config.sig_type)?,
+                    )?,
+                };
+                Ok(RustlsConfig::Client(Arc::new(config)))
+            }
+            Mode::Server => {
+                let builder = ServerConfig::builder()
+                    .with_cipher_suites(&[cipher_suite])
+                    .with_kx_groups(&[kx_group])
+                    .with_protocol_versions(&[&TLS13])?;
+                let builder = match handshake_type {
+                    HandshakeType::ServerAuth => builder.with_no_client_auth(),
+                    HandshakeType::MutualAuth => builder.with_client_cert_verifier(Arc::new(
+                        AllowAnyAuthenticatedClient::new(Self::get_root_cert_store(
+                            &crypto_config.sig_type,
+                        )?),
+                    )),
+                };
+                let config = builder.with_single_cert(
+                    Self::get_cert_chain(&ServerCertChain, &crypto_config.sig_type)?,
+                    Self::get_key(&ServerKey, &crypto_config.sig_type)?,
+                )?;
+                Ok(RustlsConfig::Server(Arc::new(config)))
+            }
+        }
+    }
 
-        let server_builder = ServerConfig::builder()
-            .with_cipher_suites(&[cipher_suite])
-            .with_kx_groups(&[kx_group])
-            .with_protocol_versions(&[&TLS13])?;
-
-        let (client_builder, server_builder) = match handshake_type {
-            HandshakeType::mTLS => (
-                client_builder.with_single_cert(
-                    Self::get_cert_chain(&ClientCertChain, &crypto_config.sig_type)?,
-                    Self::get_key(&ClientKey, &crypto_config.sig_type)?,
-                )?,
-                server_builder.with_client_cert_verifier(Arc::new(
-                    AllowAnyAuthenticatedClient::new(Self::get_root_cert_store(
-                        &crypto_config.sig_type,
-                    )?),
-                )),
-            ),
-            HandshakeType::Full => (
-                client_builder.with_no_client_auth(),
-                server_builder.with_no_client_auth(),
-            ),
+    /// Make connection from existing config and buffer
+    fn new_from_config(
+        config: &Self::Config,
+        connected_buffer: ConnectedBuffer,
+    ) -> Result<Self, Box<dyn Error>> {
+        let connection = match config {
+            RustlsConfig::Client(config) => Client(ClientConnection::new(
+                config.clone(),
+                ServerName::try_from("localhost")?,
+            )?),
+            RustlsConfig::Server(config) => Server(ServerConnection::new(config.clone())?),
         };
 
-        let client_config = Arc::new(client_builder);
-        let server_config = Arc::new(server_builder.with_single_cert(
-            Self::get_cert_chain(&ServerCertChain, &crypto_config.sig_type)?,
-            Self::get_key(&ServerKey, &crypto_config.sig_type)?,
-        )?);
-
-        let client_conn = Client(ClientConnection::new(
-            client_config,
-            ServerName::try_from("localhost")?,
-        )?);
-        let server_conn = Server(ServerConnection::new(server_config)?);
-
         Ok(Self {
-            client_buf,
-            server_buf,
-            client_conn,
-            server_conn,
+            connected_buffer,
+            connection,
         })
     }
 
+    /// Run one handshake step on initialized connections
     fn handshake(&mut self) -> Result<(), Box<dyn Error>> {
-        for _ in 0..2 {
-            Self::ignore_block(self.client_conn.complete_io(&mut self.client_buf))?;
-            Self::ignore_block(self.server_conn.complete_io(&mut self.server_buf))?;
-        }
+        Self::ignore_block(self.connection.complete_io(&mut self.connected_buffer))?;
         Ok(())
     }
 
     fn handshake_completed(&self) -> bool {
-        !self.client_conn.is_handshaking() && !self.server_conn.is_handshaking()
+        !self.connection.is_handshaking()
     }
 
     fn get_negotiated_cipher_suite(&self) -> CipherSuite {
-        match self.client_conn.negotiated_cipher_suite().unwrap().suite() {
+        match self.connection.negotiated_cipher_suite().unwrap().suite() {
             rustls::CipherSuite::TLS13_AES_128_GCM_SHA256 => CipherSuite::AES_128_GCM_SHA256,
             rustls::CipherSuite::TLS13_AES_256_GCM_SHA384 => CipherSuite::AES_256_GCM_SHA384,
             _ => panic!("Unknown cipher suite"),
@@ -161,54 +169,53 @@ impl TlsBenchHarness for RustlsHarness {
     }
 
     fn negotiated_tls13(&self) -> bool {
-        self.client_conn
+        self.connection
             .protocol_version()
             .expect("Handshake not completed")
             == TLSv1_3
     }
 
-    fn transfer(&mut self, sender: Mode, data: &mut [u8]) -> Result<(), Box<dyn Error>> {
-        let (send_conn, send_buf, recv_conn, recv_buf) = match sender {
-            Mode::Client => (
-                &mut self.client_conn,
-                &mut self.client_buf,
-                &mut self.server_conn,
-                &mut self.server_buf,
-            ),
-            Mode::Server => (
-                &mut self.server_conn,
-                &mut self.server_buf,
-                &mut self.client_conn,
-                &mut self.client_buf,
-            ),
-        };
-
-        let data_len = data.len();
-
+    /// Send application data to ConnectedBuffer
+    fn send(&mut self, data: &[u8]) -> Result<(), Box<dyn Error>> {
         let mut write_offset = 0;
-        while write_offset < data_len {
-            write_offset += send_conn.writer().write(&data[write_offset..data_len])?;
-            send_conn.writer().flush()?;
-            send_conn.complete_io(send_buf)?;
+        while write_offset < data.len() {
+            write_offset += self
+                .connection
+                .writer()
+                .write(&data[write_offset..data.len()])?;
+            self.connection.writer().flush()?;
+            self.connection.complete_io(&mut self.connected_buffer)?;
         }
-
-        let mut read_offset = 0;
-        while read_offset < data_len {
-            recv_conn.complete_io(recv_buf)?;
-            read_offset +=
-                Self::ignore_block(recv_conn.reader().read(&mut data[read_offset..data_len]))?;
-        }
-
         Ok(())
     }
 
-    fn shrink_connection_buffers(&mut self) {
-        self.client_conn.set_buffer_limit(Some(1));
-        self.server_conn.set_buffer_limit(Some(1));
+    /// Receive application data from ConnectedBuffer
+    fn recv(&mut self, data: &mut [u8]) -> Result<(), Box<dyn Error>> {
+        let data_len = data.len();
+        let mut read_offset = 0;
+        while read_offset < data.len() {
+            self.connection.complete_io(&mut self.connected_buffer)?;
+            read_offset += Self::ignore_block(
+                self.connection
+                    .reader()
+                    .read(&mut data[read_offset..data_len]),
+            )?;
+        }
+        Ok(())
     }
 
-    fn shrink_connected_buffers(&mut self) {
-        self.client_buf.shrink();
-        self.server_buf.shrink();
+    /// Release buffers in connections
+    fn shrink_connection_buffers(&mut self) {
+        self.connection.set_buffer_limit(Some(1));
+    }
+
+    /// Release connected buffers for IO between connections
+    fn shrink_connected_buffer(&mut self) {
+        self.connected_buffer.shrink();
+    }
+
+    /// Get internal connected buffer
+    fn clone_connected_buffer(&self) -> ConnectedBuffer {
+        self.connected_buffer.clone()
     }
 }

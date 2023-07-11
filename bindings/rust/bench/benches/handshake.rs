@@ -6,16 +6,16 @@ use bench::{
     CryptoConfig,
     ECGroup::{self, *},
     HandshakeType::{self, *},
-    OpenSslHarness, RustlsHarness, S2NHarness,
+    OpenSslConnection, RustlsConnection, S2NConnection,
     SigType::{self, *},
-    TlsBenchHarness,
+    TlsConnPair, TlsConnection,
 };
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BatchSize, BenchmarkGroup, Criterion,
 };
 
 pub fn bench_handshake_params(c: &mut Criterion) {
-    fn bench_handshake_for_library<T: TlsBenchHarness>(
+    fn bench_handshake_for_library<T: TlsConnection>(
         bench_group: &mut BenchmarkGroup<WallTime>,
         name: &str,
         handshake_type: HandshakeType,
@@ -27,7 +27,7 @@ pub fn bench_handshake_params(c: &mut Criterion) {
         bench_group.bench_function(name, |b| {
             b.iter_batched_ref(
                 || {
-                    T::new(
+                    TlsConnPair::<T, T>::new(
                         CryptoConfig::new(Default::default(), ec_group, sig_type),
                         handshake_type,
                         Default::default(),
@@ -45,14 +45,14 @@ pub fn bench_handshake_params(c: &mut Criterion) {
         });
     }
 
-    for handshake_type in [Full, mTLS] {
+    for handshake_type in [ServerAuth, MutualAuth] {
         for ec_group in [SECP256R1, X25519] {
             for sig_type in [Rsa2048, Rsa4096, Ec384] {
                 let mut bench_group = c.benchmark_group(format!(
                     "handshake-{:?}-{:?}-{:?}",
                     handshake_type, ec_group, sig_type
                 ));
-                bench_handshake_for_library::<S2NHarness>(
+                bench_handshake_for_library::<S2NConnection>(
                     &mut bench_group,
                     "s2n-tls",
                     handshake_type,
@@ -61,14 +61,14 @@ pub fn bench_handshake_params(c: &mut Criterion) {
                 );
                 #[cfg(not(feature = "s2n-only"))]
                 {
-                    bench_handshake_for_library::<RustlsHarness>(
+                    bench_handshake_for_library::<RustlsConnection>(
                         &mut bench_group,
                         "rustls",
                         handshake_type,
                         ec_group,
                         sig_type,
                     );
-                    bench_handshake_for_library::<OpenSslHarness>(
+                    bench_handshake_for_library::<OpenSslConnection>(
                         &mut bench_group,
                         &openssl_version_str(),
                         handshake_type,

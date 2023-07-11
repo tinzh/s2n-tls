@@ -14,13 +14,7 @@ pushd "$(dirname "$0")"
 
 cargo build --release --bin memory
 
-bench () {
-    valgrind --tool=massif --massif-out-file="target/memory/$1/massif.out" --time-unit=ms "${@:2}" target/release/memory $1
-}
-
-bench s2n-tls $@
-bench rustls $@
-bench openssl $@
+valgrind --tool=massif --massif-out-file="target/massif.out" --time-unit=ms "${@:1}" target/release/memory
 
 cargo bench --bench memory
 

@@ -37,11 +37,11 @@ then
     cmake . -Bbuild -DCMAKE_PREFIX_PATH=$repo_dir/libcrypto-root/ -DS2N_INTERN_LIBCRYPTO=ON -DBUILD_TESTING=OFF
     cmake --build ./build -j $(nproc)
 else
-    echo "using libs2n.a at build/lib/"
+    echo "using libs2n.a at build/lib"
 fi
 
 # tell s2n-tls-sys crate where s2n-tls was built with .cargo/config.toml
-cd bindings/rust/bench
+cd $repo_dir/bindings/rust/bench
 mkdir -p .cargo
 echo "[env]
 S2N_TLS_LIB_DIR = \"$repo_dir/build/lib\"

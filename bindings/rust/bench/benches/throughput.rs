@@ -4,17 +4,17 @@
 use bench::{
     harness::openssl_version_str,
     CipherSuite::{self, *},
-    CryptoConfig, Mode, OpenSslHarness, RustlsHarness, S2NHarness, TlsBenchHarness,
+    CryptoConfig, OpenSslConnection, RustlsConnection, S2NConnection, TlsConnPair, TlsConnection,
 };
 use criterion::{
-    black_box, criterion_group, criterion_main, measurement::WallTime, BatchSize, BenchmarkGroup,
-    Criterion, Throughput,
+    criterion_group, criterion_main, measurement::WallTime, BatchSize, BenchmarkGroup, Criterion,
+    Throughput,
 };
 
 pub fn bench_throughput_cipher_suite(c: &mut Criterion) {
     let mut shared_buf = [0u8; 100000];
 
-    fn bench_throughput_for_library<T: TlsBenchHarness>(
+    fn bench_throughput_for_library<T: TlsConnection>(
         bench_group: &mut BenchmarkGroup<WallTime>,
         name: &str,
         shared_buf: &mut [u8],
@@ -23,7 +23,7 @@ pub fn bench_throughput_cipher_suite(c: &mut Criterion) {
         bench_group.bench_function(name, |b| {
             b.iter_batched_ref(
                 || {
-                    let mut harness = T::new(
+                    let mut harness = TlsConnPair::<T, T>::new(
                         CryptoConfig::new(cipher_suite, Default::default(), Default::default()),
                         Default::default(),
                         Default::default(),
@@ -33,12 +33,7 @@ pub fn bench_throughput_cipher_suite(c: &mut Criterion) {
                     harness
                 },
                 |harness| {
-                    harness
-                        .transfer(Mode::Client, black_box(shared_buf))
-                        .unwrap();
-                    harness
-                        .transfer(Mode::Server, black_box(shared_buf))
-                        .unwrap();
+                    harness.round_trip_transfer(shared_buf).unwrap();
                 },
                 BatchSize::SmallInput,
             )
@@ -48,7 +43,7 @@ pub fn bench_throughput_cipher_suite(c: &mut Criterion) {
     for cipher_suite in [AES_128_GCM_SHA256, AES_256_GCM_SHA384] {
         let mut bench_group = c.benchmark_group(format!("throughput-{:?}", cipher_suite));
         bench_group.throughput(Throughput::Bytes(shared_buf.len() as u64));
-        bench_throughput_for_library::<S2NHarness>(
+        bench_throughput_for_library::<S2NConnection>(
             &mut bench_group,
             "s2n-tls",
             &mut shared_buf,
@@ -56,13 +51,13 @@ pub fn bench_throughput_cipher_suite(c: &mut Criterion) {
         );
         #[cfg(not(feature = "s2n-only"))]
         {
-            bench_throughput_for_library::<RustlsHarness>(
+            bench_throughput_for_library::<RustlsConnection>(
                 &mut bench_group,
                 "rustls",
                 &mut shared_buf,
                 cipher_suite,
             );
-            bench_throughput_for_library::<OpenSslHarness>(
+            bench_throughput_for_library::<OpenSslConnection>(
                 &mut bench_group,
                 &openssl_version_str(),
                 &mut shared_buf,

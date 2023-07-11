@@ -6,10 +6,13 @@ pub mod openssl;
 pub mod rustls;
 pub mod s2n_tls;
 pub use crate::{
-    harness::{CipherSuite, CryptoConfig, ECGroup, HandshakeType, Mode, SigType, TlsBenchHarness},
-    openssl::OpenSslHarness,
-    rustls::RustlsHarness,
-    s2n_tls::S2NHarness,
+    harness::{
+        CipherSuite, CryptoConfig, ECGroup, HandshakeType, Mode, SigType, TlsConnPair,
+        TlsConnection,
+    },
+    openssl::OpenSslConnection,
+    rustls::RustlsConnection,
+    s2n_tls::S2NConnection,
 };
 
 pub enum PemType {
