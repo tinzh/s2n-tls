@@ -10,16 +10,18 @@ pushd "$(dirname "$0")" > /dev/null
 bench_dir="$(pwd)"
 
 # clone rustls to bench/target/rustls and checkout compatible version
+echo "cloning rustls" 
 rm -rf target/rustls
-git clone https://github.com/rustls/rustls target/rustls
+git clone https://github.com/rustls/rustls target/rustls --quiet
 cd target/rustls
-git checkout 'v/0.21.5'
+git checkout 'v/0.21.5' --quiet
 
 # go to dir with rustls crate
 cd rustls
 rustls_dir="$(pwd)"
 
 # change rustls to use aws-lc-rs
+echo "changing rustls config to use aws-lc-rs"
 sed -i 's|ring = .*|ring = { package = "aws-lc-rs" }|' Cargo.toml
 
 # tell Cargo to use custom rustls

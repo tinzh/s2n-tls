@@ -3,6 +3,10 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+# sets bench crate to use aws-lc with s2n-tls
+# aws-lc build directory: s2n-tls/libcrypto-build/
+# aws-lc install directory: s2n-tls/libcrypto-root/
+
 set -e
 
 # go to repo directory
@@ -37,14 +41,17 @@ then
     cmake . -Bbuild -DCMAKE_PREFIX_PATH=$repo_dir/libcrypto-root/ -DS2N_INTERN_LIBCRYPTO=ON -DBUILD_TESTING=OFF
     cmake --build ./build -j $(nproc)
 else
-    echo "using libs2n.a at build/lib"
+    echo "using libs2n.a at build/lib/"
 fi
 
 # tell s2n-tls-sys crate where s2n-tls was built with .cargo/config.toml
-cd $repo_dir/bindings/rust/bench
+cd bindings/rust/bench
 mkdir -p .cargo
 echo "[env]
 S2N_TLS_LIB_DIR = \"$repo_dir/build/lib\"
 LD_LIBRARY_PATH = \"$repo_dir/build/lib\"" >> .cargo/config.toml
+
+# force rebuild of s2n-tls-sys and benches
+rm -rf ../target/release target/release
 
 popd > /dev/null
