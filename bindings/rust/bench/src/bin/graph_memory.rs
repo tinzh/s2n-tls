@@ -1,14 +1,14 @@
-use std::{
-    collections::BTreeMap,
-    error::Error,
-    fs::{read_dir, read_to_string},
-};
 use plotters::{
     prelude::{
         ChartBuilder, IntoDrawingArea, IntoSegmentedCoord, LabelAreaPosition, Rectangle,
         SVGBackend, SegmentValue,
     },
-    style::{AsRelative, Color, IntoFont, Palette, Palette99, RGBAColor, WHITE},
+    style::{AsRelative, Color, HSLColor, IntoFont, RGBAColor, WHITE},
+};
+use std::{
+    collections::BTreeMap,
+    error::Error,
+    fs::{read_dir, read_to_string},
 };
 
 fn get_bytes_from_snapshot(name: &str, i: i32) -> i32 {
@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .set_label_area_size(LabelAreaPosition::Bottom, (5).percent())
         .build_cartesian_2d(
             (0..num_bars - 1).into_segmented(),
-            0.0..(0.5 * max_mem), // upper y bound on plot is 1.1 * y_max
+            0.0..(1.1 * max_mem), // upper y bound on plot is 1.1 * y_max
         )?;
 
     ctx.configure_mesh()
@@ -102,7 +102,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 // define each bar as a Rectangle
                 let x0 = SegmentValue::Exact(i);
                 let x1 = SegmentValue::Exact(i + 1);
-                let color = Palette99::pick(i).filled();
+                let h = ((i / 3) as f64) * 0.25 - (((i % 3) as i32) as f64) * 0.05 + 0.1;
+                let color = HSLColor(h, 1.0, 0.5).filled();
                 let mut bar = Rectangle::new([(x0, 0.0), (x1, *mean)], color);
                 bar.set_margin(0, 0, 10, 10); // spacing between bars
                 bar

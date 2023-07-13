@@ -214,7 +214,9 @@ impl<C: TlsConnection, S: TlsConnection> TlsConnPair<C, S> {
     /// Get negotiated cipher suite
     pub fn get_negotiated_cipher_suite(&self) -> CipherSuite {
         assert!(self.handshake_completed());
-        assert!(self.client.get_negotiated_cipher_suite() == self.server.get_negotiated_cipher_suite());
+        assert!(
+            self.client.get_negotiated_cipher_suite() == self.server.get_negotiated_cipher_suite()
+        );
         self.client.get_negotiated_cipher_suite()
     }
 
@@ -406,6 +408,9 @@ mod tests {
         assert!(harness.handshake_completed());
 
         assert!(harness.negotiated_tls13());
-        assert_eq!(CipherSuite::default(), harness.get_negotiated_cipher_suite());
+        assert_eq!(
+            CipherSuite::default(),
+            harness.get_negotiated_cipher_suite()
+        );
     }
 }

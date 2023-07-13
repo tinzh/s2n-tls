@@ -9,7 +9,8 @@ use crate::{
     PemType::*,
 };
 use openssl::ssl::{
-    ErrorCode, Ssl, SslContext, SslFiletype, SslMethod, SslStream, SslVerifyMode, SslVersion,
+    ErrorCode, Ssl, SslContext, SslFiletype, SslMethod, SslMode, SslStream, SslVerifyMode,
+    SslVersion,
 };
 use std::{
     error::Error,
@@ -48,6 +49,7 @@ impl TlsConnection for OpenSslConnection {
         builder.set_min_proto_version(Some(SslVersion::TLS1_3))?;
         builder.set_ciphersuites(cipher_suite)?;
         builder.set_groups_list(ec_key)?;
+        builder.set_mode(SslMode::RELEASE_BUFFERS);
 
         if mode == Mode::Client {
             builder.set_ca_file(get_cert_path(&CACert, &crypto_config.sig_type))?;
