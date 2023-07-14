@@ -147,7 +147,7 @@ pub trait TlsConnection: Sized {
     fn shrink_connected_buffer(&mut self);
 
     /// Get internal connected buffer
-    fn clone_connected_buffer(&self) -> ConnectedBuffer;
+    fn connected_buffer(&self) -> &ConnectedBuffer;
 }
 
 pub struct TlsConnPair<C: TlsConnection, S: TlsConnection> {
@@ -165,7 +165,7 @@ impl<C: TlsConnection, S: TlsConnection> TlsConnPair<C, S> {
     /// Initialize buffers, configs, and connections (pre-handshake)
     pub fn wrap(client: C, server: S) -> Self {
         assert!(
-            client.clone_connected_buffer() == server.clone_connected_buffer().inverse(),
+            client.connected_buffer() == &server.connected_buffer().clone_inverse(),
             "connected buffers don't match"
         );
         Self { client, server }
@@ -185,7 +185,7 @@ impl<C: TlsConnection, S: TlsConnection> TlsConnPair<C, S> {
                 Mode::Client,
                 crypto_config,
                 handshake_type,
-                connected_buffer.clone().inverse(),
+                connected_buffer.clone_inverse(),
             )?,
             server: S::new(
                 Mode::Server,
@@ -280,10 +280,10 @@ impl ConnectedBuffer {
 
     /// Make a new struct that shares internal buffers but swapped, ex.
     /// `write()` writes to the buffer that the inverse `read()`s from
-    pub fn inverse(self) -> Self {
+    pub fn clone_inverse(&self) -> Self {
         Self {
-            recv: self.send,
-            send: self.recv,
+            recv: self.send.clone(),
+            send: self.recv.clone(),
         }
     }
 

@@ -18,6 +18,12 @@ arg_enum! {
     }
 }
 
+impl Default for MemoryBenchMode {
+    fn default() -> Self {
+        MemoryBenchMode::Pair
+    }
+}
+
 enum TlsStruct<T: TlsConnection> {
     Client(T),
     Server(T),
@@ -41,11 +47,13 @@ fn memory_bench_library_size<T: TlsConnection>(lib_name: &str) -> Result<(), Box
 fn memory_bench_conn<T: TlsConnection>(
     mode: MemoryBenchMode,
     name: &str,
+    generate_new_config_each_time: bool,
+    keep_internal_buffers: bool,
 ) -> Result<(), Box<dyn Error>> {
     let dir_name = match mode {
         MemoryBenchMode::Client => format!("{name}_client"),
         MemoryBenchMode::Server => format!("{name}_server"),
-        MemoryBenchMode::Pair => name.to_string(),
+        MemoryBenchMode::Pair => format!("{name}_pair"),
     };
 
     println!("testing {dir_name}");
@@ -54,11 +62,11 @@ fn memory_bench_conn<T: TlsConnection>(
     create_dir_all("target/memory/xtree").unwrap();
 
     let mut tls_structs = Vec::new();
-    tls_structs.reserve(100);
+    tls_structs.reserve_exact(100);
 
     // reserve space for buffers before benching
     let mut buffers = Vec::new();
-    buffers.reserve(100);
+    buffers.reserve_exact(100);
     for _ in 0..100 {
         let mut buffer = ConnectedBuffer::new();
         buffer.shrink();
@@ -78,14 +86,32 @@ fn memory_bench_conn<T: TlsConnection>(
 
     // make and handshake 100 harness
     for i in 1..101 {
-        let client_conn = T::new_from_config(&client_config, buffers.pop().unwrap())?;
-        let server_conn = T::new_from_config(
-            &server_config,
-            client_conn.clone_connected_buffer().inverse(),
-        )?;
+        let (client_conn, server_conn);
+        if generate_new_config_each_time {
+            client_conn = T::new(
+                Client,
+                Default::default(),
+                Default::default(),
+                buffers.pop().unwrap(),
+            )?;
+            server_conn = T::new(
+                Server,
+                Default::default(),
+                Default::default(),
+                client_conn.connected_buffer().clone_inverse(),
+            )?;
+        } else {
+            client_conn = T::new_from_config(&client_config, buffers.pop().unwrap())?;
+            server_conn = T::new_from_config(
+                &server_config,
+                client_conn.connected_buffer().clone_inverse(),
+            )?;
+        }
         let mut harness = TlsConnPair::<T, T>::wrap(client_conn, server_conn);
         harness.handshake()?;
-        harness.shrink_connection_buffers();
+        if !keep_internal_buffers {
+            harness.shrink_connection_buffers();
+        }
         harness.shrink_connected_buffers();
 
         tls_structs.push(match mode {
@@ -104,25 +130,36 @@ fn memory_bench_conn<T: TlsConnection>(
     Ok(())
 }
 
-fn memory_bench<T: TlsConnection>(name: &str, mode: MemoryBenchMode) -> Result<(), Box<dyn Error>> {
-    memory_bench_conn::<T>(mode, name)?;
+fn memory_bench<T: TlsConnection>(name: &str, opt: &Opt) -> Result<(), Box<dyn Error>> {
+    memory_bench_conn::<T>(
+        opt.mode,
+        name,
+        opt.generate_new_config_each_time,
+        opt.keep_internal_buffers,
+    )?;
 
-    if mode == MemoryBenchMode::Pair {
-        memory_bench_conn::<T>(MemoryBenchMode::Client, name)?;
-        memory_bench_conn::<T>(MemoryBenchMode::Server, name)?;
+    if opt.mode == MemoryBenchMode::Pair {
+        memory_bench_conn::<T>(MemoryBenchMode::Client, name, opt.generate_new_config_each_time, opt.keep_internal_buffers)?;
+        memory_bench_conn::<T>(MemoryBenchMode::Server, name, opt.generate_new_config_each_time, opt.keep_internal_buffers)?;
         memory_bench_library_size::<T>(name)?;
     }
 
     Ok(())
 }
 
-#[derive(StructOpt)]
+#[derive(Default, StructOpt)]
 struct Opt {
     #[structopt()]
     lib_name: Option<String>,
 
-    #[structopt(possible_values = &MemoryBenchMode::variants(), case_insensitive = true)]
-    mode: Option<MemoryBenchMode>,
+    #[structopt(possible_values = &MemoryBenchMode::variants(), case_insensitive = true, default_value = "pair")]
+    mode: MemoryBenchMode,
+
+    #[structopt(short = "-c")]
+    generate_new_config_each_time: bool,
+
+    #[structopt(short = "-b")]
+    keep_internal_buffers: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -130,19 +167,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let opt = Opt::from_args();
 
-    let mode = opt.mode.unwrap_or(MemoryBenchMode::Pair);
-
-    match opt.lib_name {
+    match &opt.lib_name {
         Some(lib_name) => match lib_name.as_str() {
-            "s2n-tls" => memory_bench::<S2NConnection>("s2n-tls", mode)?,
-            "rustls" => memory_bench::<RustlsConnection>("rustls", mode)?,
-            "openssl" => memory_bench::<OpenSslConnection>("openssl", mode)?,
+            "s2n-tls" => memory_bench::<S2NConnection>("s2n-tls", &opt)?,
+            "rustls" => memory_bench::<RustlsConnection>("rustls", &opt)?,
+            "openssl" => memory_bench::<OpenSslConnection>("openssl", &opt)?,
             _ => panic!("invalid argument"),
         },
         None => {
-            memory_bench::<S2NConnection>("s2n-tls", mode)?;
-            memory_bench::<OpenSslConnection>("openssl", mode)?;
-            memory_bench::<RustlsConnection>("rustls", mode)?;
+            memory_bench::<S2NConnection>("s2n-tls", &opt)?;
+            memory_bench::<OpenSslConnection>("openssl", &opt)?;
+            memory_bench::<RustlsConnection>("rustls", &opt)?;
         }
     }
 

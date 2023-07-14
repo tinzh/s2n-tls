@@ -12,11 +12,21 @@ set -e
 
 pushd "$(dirname "$0")"/.. > /dev/null
 
-cargo build --release --bin memory
+cargo build --release --bin memory --bin graph_memory
 
-valgrind --tool=massif --depth=1 --massif-out-file="target/memory/massif.out" --time-unit=ms "$@" target/release/memory
-rm target/memory/massif.out
+bench_memory () {
+    valgrind --tool=massif --depth=1 --massif-out-file="target/memory/massif.out" --time-unit=ms target/release/memory $@
+    rm target/memory/massif.out
 
-cargo run --release --bin graph_memory
+    cargo run --release --bin graph_memory
+
+    mkdir -p memory/args$1$2
+    mv memory/*.svg memory/args$1$2/
+}
+
+bench_memory -c
+bench_memory -b
+bench_memory -bc
+bench_memory 
 
 popd > /dev/null

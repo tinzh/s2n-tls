@@ -3,7 +3,7 @@ use plotters::{
         ChartBuilder, IntoDrawingArea, IntoSegmentedCoord, LabelAreaPosition, Rectangle,
         SVGBackend, SegmentValue,
     },
-    style::{AsRelative, Color, HSLColor, IntoFont, RGBAColor, WHITE},
+    style::{AsRelative, IntoFont, RGBAColor, WHITE, Palette99, Palette, Color},
 };
 use std::{
     collections::BTreeMap,
@@ -28,7 +28,8 @@ fn get_bytes_diff(name: &str, i: i32) -> i32 {
     get_bytes_from_snapshot(name, i + 1) - get_bytes_from_snapshot(name, i)
 }
 
-fn get_memory_data(name: &str) -> (f64, f64) {
+/// Returns (mean, stderr) of memory usage for a given memory bench name
+fn get_memory_for_bench(name: &str) -> (f64, f64) {
     let data: Vec<f64> = (0..100).map(|i| get_bytes_diff(name, i) as f64).collect();
     let mean = data.iter().sum::<f64>() / (data.len() as f64);
     let variance: f64 =
@@ -39,33 +40,52 @@ fn get_memory_data(name: &str) -> (f64, f64) {
     (mean, stderr)
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+/// Returns map of memory bench name to (mean, stderr) of memory usage
+fn get_memory_data() -> BTreeMap<String, (f64, f64)> {
     // get data from each directory in target/memory
     let mut stats: BTreeMap<String, (f64, f64)> = Default::default();
-    for dir_entry in read_dir("target/memory")? {
-        let dir_path = dir_entry?.path();
+    for dir_entry in read_dir("target/memory").unwrap() {
+        let dir_path = dir_entry.unwrap().path();
         let dir_name = dir_path.file_name().unwrap().to_str().unwrap().to_string();
 
         if dir_name != "xtree" {
-            stats.insert(dir_name.clone(), get_memory_data(&dir_name));
+            stats.insert(dir_name.clone(), get_memory_for_bench(&dir_name));
         }
     }
+    stats
+}
 
-    let num_bars = stats.len();
-    let x_labels: Vec<String> = stats.iter().map(|kv| kv.0.clone()).collect();
-    let max_mem = stats
+/// Plots given benches in given data
+/// Takes in map of memory bench name to (mean, stderr) and a list of bench names
+/// If list of bench names is empty, plot all data
+fn plot(file_suffix: &str, all_data: &BTreeMap<String, (f64, f64)>, names: &[&str]) -> Result<(), Box<dyn Error>> {
+    let data: Vec<(&String, &(f64, f64))> = if names.len() != 0 {
+        all_data.iter().filter(|(name, _)| names.contains(&(*name).as_str())).collect()
+    } else {
+        all_data.iter().collect()
+    };
+
+    assert!(data.len() > 0, "no data with given names found");
+
+    let num_bars = data.len();
+    let x_labels: Vec<&String> = data.iter().map(|(name, _)| *name ).collect();
+    let max_mem = data
         .iter()
-        .max_by(|a, b| f64::total_cmp(&a.1 .0, &b.1 .0))
-        .unwrap()
-        .1
-         .0;
+        .map(|(_name, (mean, _stderr))| mean)
+        .max_by(|a, b| f64::total_cmp(a, b))
+        .unwrap();
+    let max_mem = 100000.0;
 
-    let drawing_area = SVGBackend::new("memory/memory.svg", (1000, 500)).into_drawing_area();
+    const PLOT_WIDTH: u32 = 1000;
+    let bar_margin = PLOT_WIDTH/(num_bars as u32)/10;
+    
+    let file_name = format!("memory/memory-{file_suffix}.svg");
+    let drawing_area = SVGBackend::new(&file_name, (PLOT_WIDTH as u32, 500)).into_drawing_area();
     drawing_area.fill(&WHITE)?;
 
     let mut ctx = ChartBuilder::on(&drawing_area)
         .caption(
-            "Memory usage of a connection pair",
+            "Memory usage of connections",
             ("sans-serif", 30).into_font(),
         )
         .set_label_area_size(LabelAreaPosition::Left, (12).percent()) // axes padding
@@ -95,20 +115,30 @@ fn main() -> Result<(), Box<dyn Error>> {
     // draw bars
     // x coord is index of bench name in x_labels
     ctx.draw_series(
-        stats
+        data
             .iter()
             .enumerate()
             .map(|(i, (_name, (mean, _stderr)))| {
                 // define each bar as a Rectangle
                 let x0 = SegmentValue::Exact(i);
                 let x1 = SegmentValue::Exact(i + 1);
-                let h = ((i / 3) as f64) * 0.25 - (((i % 3) as i32) as f64) * 0.05 + 0.1;
-                let color = HSLColor(h, 1.0, 0.5).filled();
+                let color = Palette99::pick(i).filled();
                 let mut bar = Rectangle::new([(x0, 0.0), (x1, *mean)], color);
-                bar.set_margin(0, 0, 10, 10); // spacing between bars
+                bar.set_margin(0, 0, bar_margin, bar_margin); // spacing between bars
                 bar
             }),
     )?;
+
+    Ok(())
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let all_data = get_memory_data();
+
+    plot("all", &all_data, &[])?;
+    plot("pair", &all_data, &["openssl_pair", "rustls_pair", "s2n-tls_pair"])?;
+    plot("client", &all_data, &["openssl_client", "rustls_client", "s2n-tls_client"])?;
+    plot("server", &all_data, &["openssl_server", "rustls_server", "s2n-tls_server"])?;
 
     Ok(())
 }

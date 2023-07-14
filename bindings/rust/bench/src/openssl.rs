@@ -173,7 +173,7 @@ impl TlsConnection for OpenSslConnection {
     }
 
     /// Get internal connected buffer
-    fn clone_connected_buffer(&self) -> ConnectedBuffer {
-        self.connected_buffer.clone()
+    fn connected_buffer(&self) -> &ConnectedBuffer {
+        &self.connected_buffer
     }
 }
