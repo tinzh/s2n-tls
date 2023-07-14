@@ -29,7 +29,8 @@ then
         cd aws-lc
 
         # build aws-lc to libcrypto-root
-        cmake -B build -DCMAKE_INSTALL_PREFIX=$repo_dir/libcrypto-root/ -DBUILD_TESTING=OFF -DBUILD_LIBSSL=OFF
+        rm -rf build
+        cmake -B build -DCMAKE_INSTALL_PREFIX=$repo_dir/libcrypto-root/ -DBUILD_TESTING=OFF -DBUILD_LIBSSL=OFF -DCMAKE_BUILD_TYPE=Release
         cmake --build ./build -j $(nproc)
         make -C build install
     else
@@ -38,7 +39,7 @@ then
 
     # build s2n-tls
     cd $repo_dir
-    cmake . -Bbuild -DCMAKE_PREFIX_PATH=$repo_dir/libcrypto-root/ -DS2N_INTERN_LIBCRYPTO=ON -DBUILD_TESTING=OFF
+    cmake . -Bbuild -DCMAKE_PREFIX_PATH=$repo_dir/libcrypto-root/ -DS2N_INTERN_LIBCRYPTO=ON -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release
     cmake --build ./build -j $(nproc)
 else
     echo "using libs2n.a at build/lib/"
