@@ -7,6 +7,9 @@
 # aws-lc build directory: s2n-tls/libcrypto-build/
 # aws-lc install directory: s2n-tls/libcrypto-root/
 
+# `rebuild` argument rebuilds aws-lc and s2n-tls
+# `use-awslc-s2n.sh rebuild`
+
 set -e
 
 # go to repo directory
@@ -14,14 +17,14 @@ pushd "$(dirname "$0")/../../../" > /dev/null
 repo_dir="$(pwd)"
 
 # if libs2n not found, build it
-if [ ! -e build/lib/libs2n.a ]
+if [[ "$1" == "rebuild" || ! -e build/lib/libs2n.a ]]
 then
     # if aws-lc not found, build it
-    if [ ! -e libcrypto-root/lib/libcrypto.a ]
+    if [[ "$1" == "rebuild" || ! -e libcrypto-root/lib/libcrypto.a ]]
     then
         # clean up directories
         rm -rf libcrypto-root libcrypto-build/aws-lc
-        mkdir libcrypto-root
+        mkdir -p libcrypto-root libcrypto-build
 
         # clone aws-lc
         cd libcrypto-build/
@@ -39,7 +42,8 @@ then
 
     # build s2n-tls
     cd $repo_dir
-    cmake . -Bbuild -DCMAKE_PREFIX_PATH=$repo_dir/libcrypto-root/ -DS2N_INTERN_LIBCRYPTO=ON -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release
+    rm -rf build
+    cmake . -Bbuild -DCMAKE_PREFIX_PATH=$repo_dir/libcrypto-root/ -DS2N_INTERN_LIBCRYPTO=ON -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
     cmake --build ./build -j $(nproc)
 else
     echo "using libs2n.a at build/lib/"

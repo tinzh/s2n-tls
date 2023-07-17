@@ -45,6 +45,8 @@ pub fn bench_handshake_params(c: &mut Criterion) {
         });
     }
 
+    std::env::vars().map(|(var, val)| eprintln!("var: {var}, val: {val}")).last();
+
     for handshake_type in [ServerAuth, MutualAuth] {
         for ec_group in [SECP256R1, X25519] {
             for sig_type in [Rsa2048, Rsa4096, Ec384] {
