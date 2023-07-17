@@ -23,7 +23,7 @@ then
     if [[ "$1" == "rebuild" || ! -e libcrypto-root/lib/libcrypto.a ]]
     then
         # clean up directories
-        rm -rf libcrypto-root libcrypto-build/aws-lc
+        rm -rf libcrypto-root/* libcrypto-build/aws-lc
         mkdir -p libcrypto-root libcrypto-build
 
         # clone aws-lc
@@ -43,7 +43,7 @@ then
     # build s2n-tls
     cd $repo_dir
     rm -rf build
-    cmake . -Bbuild -DCMAKE_PREFIX_PATH=$repo_dir/libcrypto-root/ -DS2N_INTERN_LIBCRYPTO=ON -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+    cmake . -Bbuild -DCMAKE_PREFIX_PATH=$repo_dir/libcrypto-root/ -DS2N_INTERN_LIBCRYPTO=ON -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release
     cmake --build ./build -j $(nproc)
 else
     echo "using libs2n.a at build/lib/"
