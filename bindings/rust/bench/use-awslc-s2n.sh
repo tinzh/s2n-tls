@@ -1,60 +1,67 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 # sets bench crate to use aws-lc with s2n-tls
-# aws-lc build directory: s2n-tls/libcrypto-build/
-# aws-lc install directory: s2n-tls/libcrypto-root/
-
-# `rebuild` argument rebuilds aws-lc and s2n-tls
-# `use-awslc-s2n.sh rebuild`
+# all artifacts are in target/aws-lc and target/s2n-tls-build
 
 set -e
+
+# go to bench directory
+pushd "$(dirname "$0")" > /dev/null
+bench_dir="$(pwd)"
+
+s2n_tls_build_dir="$bench_dir"/target/s2n-tls-build
+aws_lc_dir="$bench_dir"/target/aws-lc
 
 # go to repo directory
 pushd "$(dirname "$0")/../../../" > /dev/null
 repo_dir="$(pwd)"
+popd > /dev/null
 
 # if libs2n not found, build it
-if [[ "$1" == "rebuild" || ! -e build/lib/libs2n.a ]]
+if [[ $1 == "rebuild" || ! -e "$s2n_tls_build_dir"/lib/libs2n.a ]]
 then
     # if aws-lc not found, build it
-    if [[ "$1" == "rebuild" || ! -e libcrypto-root/lib/libcrypto.a ]]
+    if [[ $1 == "rebuild" || ! -e "$aws_lc_dir"/install/lib/libcrypto.a ]]
     then
-        # clean up directories
-        rm -rf libcrypto-root/* libcrypto-build/aws-lc
-        mkdir -p libcrypto-root libcrypto-build
-
-        # clone aws-lc
-        cd libcrypto-build/
+        # clone fresh aws-lc
+        cd "$bench_dir"/target
+        rm -rf aws-lc
         git clone --depth=1 https://github.com/aws/aws-lc
         cd aws-lc
 
-        # build aws-lc to libcrypto-root
-        rm -rf build
-        cmake -B build -DCMAKE_INSTALL_PREFIX=$repo_dir/libcrypto-root/ -DBUILD_TESTING=OFF -DBUILD_LIBSSL=OFF -DCMAKE_BUILD_TYPE=Release
+        # build and install aws-lc
+        cmake -B build -DCMAKE_INSTALL_PREFIX="$aws_lc_dir"/install -DBUILD_TESTING=OFF -DBUILD_LIBSSL=OFF
         cmake --build ./build -j $(nproc)
         make -C build install
     else
-        echo "using libcrypto.a at libcrypto-root/lib/"
+        echo "using libcrypto.a at target/aws-lc/install/lib"
     fi
 
-    # build s2n-tls
-    cd $repo_dir
-    rm -rf build
-    cmake . -Bbuild -DCMAKE_PREFIX_PATH=$repo_dir/libcrypto-root/ -DS2N_INTERN_LIBCRYPTO=ON -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release
-    cmake --build ./build -j $(nproc)
+    # clean up directories
+    rm -rf "$s2n_tls_build_dir"
+    mkdir -p "$s2n_tls_build_dir"
+
+    # build and install s2n-tls
+    cd "$repo_dir"
+    cmake . -B "$s2n_tls_build_dir" -DCMAKE_PREFIX_PATH="$aws_lc_dir"/install -DS2N_INTERN_LIBCRYPTO=ON -DBUILD_TESTING=OFF
+    # cmake . -B "$s2n_tls_build_dir" -DCMAKE_PREFIX_PATH=/lib/x86_64-linux-gnu/ -DS2N_INTERN_LIBCRYPTO=ON -DBUILD_TESTING=OFF
+    cmake --build "$s2n_tls_build_dir" -j $(nproc)
 else
-    echo "using libs2n.a at build/lib/"
+    echo "using libs2n.a at target/s2n-tls-build/lib"
 fi
 
 # tell s2n-tls-sys crate where s2n-tls was built with .cargo/config.toml
-cd bindings/rust/bench
+cd "$repo_dir"/bindings/rust/bench
 mkdir -p .cargo
+# if .cargo/config.toml doesn't already have an [env] header, add it
+if [[ ! -f .cargo/config.toml || "$(cat .cargo/config.toml)" != *"[env]"* ]]; then
 echo "[env]
-S2N_TLS_LIB_DIR = \"$repo_dir/build/lib\"
-LD_LIBRARY_PATH = \"$repo_dir/build/lib\"" >> .cargo/config.toml
+S2N_TLS_LIB_DIR = \"$s2n_tls_build_dir/lib\"
+LD_LIBRARY_PATH = \"$s2n_tls_build_dir/lib\"" >> .cargo/config.toml
+fi
 
 # force rebuild of s2n-tls-sys and benches
 rm -rf ../target/release target/release
