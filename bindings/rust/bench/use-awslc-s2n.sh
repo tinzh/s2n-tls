@@ -33,7 +33,7 @@ then
         cd aws-lc
 
         # build and install aws-lc
-        cmake -B build -DCMAKE_INSTALL_PREFIX="$aws_lc_dir"/install -DBUILD_TESTING=OFF -DBUILD_LIBSSL=OFF
+        cmake -B build -DCMAKE_INSTALL_PREFIX="$aws_lc_dir"/install -DBUILD_TESTING=OFF -DBUILD_LIBSSL=OFF -DCMAKE_BUILD_TYPE=Release
         cmake --build ./build -j $(nproc)
         make -C build install
     else
@@ -46,7 +46,7 @@ then
 
     # build and install s2n-tls
     cd "$repo_dir"
-    cmake . -B "$s2n_tls_build_dir" -DCMAKE_PREFIX_PATH="$aws_lc_dir"/install -DS2N_INTERN_LIBCRYPTO=ON -DBUILD_TESTING=OFF
+    cmake . -B "$s2n_tls_build_dir" -DCMAKE_PREFIX_PATH="$aws_lc_dir"/install -DS2N_INTERN_LIBCRYPTO=ON -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release
     # cmake . -B "$s2n_tls_build_dir" -DCMAKE_PREFIX_PATH=/lib/x86_64-linux-gnu/ -DS2N_INTERN_LIBCRYPTO=ON -DBUILD_TESTING=OFF
     cmake --build "$s2n_tls_build_dir" -j $(nproc)
 else
